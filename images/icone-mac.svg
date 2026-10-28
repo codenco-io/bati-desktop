@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="m-face" gradientUnits="userSpaceOnUse" x1="1.997" y1="-0.352" x2="3.003" y2="5.352">
+      <stop offset="0" stop-color="#4a5b97"/><stop offset="0.45" stop-color="#2e3d78"/><stop offset="1" stop-color="#1d2a5f"/>
+    </linearGradient>
+    <linearGradient id="m-voile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.15"/><stop offset="0.12" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.35"/>
+    </linearGradient>
+    <filter id="m-lueur" filterUnits="userSpaceOnUse" x="-1" y="-1" width="7" height="7"><feGaussianBlur stdDeviation="0.12"/></filter>
+    <clipPath id="m-corps"><rect width="5" height="5" rx="1.25"/></clipPath><filter id="ombre" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.3"/></filter></defs>
+  <g filter="url(#ombre)" transform="translate(100 100) scale(164.8)">
+    <rect width="5" height="5" rx="1.25" fill="url(#m-face)"/>
+    <rect width="5" height="5" rx="1.25" fill="url(#m-voile)"/>
+    <g clip-path="url(#m-corps)">
+      <rect x="0.245" y="0.245" width="4.51" height="4.51" rx="1.005" fill="none" stroke="#4a8cff" stroke-width="0.3" opacity="0.55" filter="url(#m-lueur)"/>
+    </g>
+    <rect x="0.245" y="0.245" width="4.51" height="4.51" rx="1.005" fill="none" stroke="#6aa8ff" stroke-width="0.09"/>
+    <g transform="translate(2.5 2.55) scale(1.2) translate(-2.5 -2.55)">
+      <g fill="#4a8cff" opacity="0.8" filter="url(#m-lueur)"><ellipse cx="1.385" cy="2.3840000000000003" rx="0.24" ry="0.26"/><ellipse cx="3.615" cy="2.3840000000000003" rx="0.24" ry="0.26"/></g>
+      <g fill="#a8ceff"><ellipse cx="1.385" cy="2.3840000000000003" rx="0.24" ry="0.26"/><ellipse cx="3.615" cy="2.3840000000000003" rx="0.24" ry="0.26"/></g>
+      <path d="M2.13 2.8219 C2.17 3.112 2.83 3.112 2.87 2.8219" fill="none" stroke="#a8ceff" stroke-width="0.1" stroke-linecap="round"/>
+    </g></g>
+</svg>

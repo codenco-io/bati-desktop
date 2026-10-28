@@ -76,9 +76,6 @@ jobs:
 
       - run: npm ci
 
-      # Toutes les tailles (Windows .ico, Mac .icns, PNG) depuis l'icône 512 px de Bati.
-      - run: npx tauri icon app-icon.png
-
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
