@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bati</title>
+  <style>
+    :root {
+      --bg: #0a0d15;
+      --surface: #141828;
+      --blue: #4a8cff;
+      --ink: #ffffff;
+      --ink-2: rgba(255, 255, 255, 0.82);
+      --line: rgba(255, 255, 255, 0.1);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: grid;
+      place-items: center;
+      background: radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--blue) 14%, transparent), transparent 60%), var(--bg);
+      color: var(--ink);
+      font-family: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    main {
+      width: min(420px, calc(100% - 32px));
+      padding: 40px 32px;
+      text-align: center;
+      background: color-mix(in srgb, var(--surface) 80%, transparent);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      opacity: 0;
+      transition: opacity .3s ease;
+    }
+    main.visible { opacity: 1; }
+    img { width: 96px; height: 96px; border-radius: 22px; }
+    h1 { margin: 20px 0 8px; font-size: 22px; font-weight: 700; }
+    p { margin: 0 0 28px; color: var(--ink-2); line-height: 1.5; }
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 28px;
+      background: var(--blue);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.1); }
+    button:disabled { opacity: .6; cursor: default; }
+    button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  </style>
+</head>
+<body>
+  <main id="carte" aria-live="polite">
+    <img src="bati.png" alt="">
+    <h1>Pas de connexion</h1>
+    <p>Bati a besoin d'internet pour ouvrir votre espace. Vérifiez votre connexion, puis réessayez.</p>
+    <button id="reessayer" type="button">Réessayer</button>
+  </main>
+  <script src="hors-ligne.js"></script>
+</body>
+</html>

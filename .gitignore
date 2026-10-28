@@ -1,0 +1,5 @@
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+# Générées par la compilation depuis app-icon.png
+src-tauri/icons/

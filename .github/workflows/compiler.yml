@@ -1,0 +1,87 @@
+name: Compiler Bati
+
+# À la main (onglet Actions > Compiler Bati > Run workflow) ou en poussant un tag v* (v0.1.0, v0.2.0…).
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: compiler-bati
+  cancel-in-progress: false
+
+jobs:
+  # Une seule Release brouillon, créée avant les deux compilations pour qu'elles y déposent leur fichier.
+  brouillon:
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(jq -r .version src-tauri/tauri.conf.json)
+          TAG="v$VERSION"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+            echo "::error::Le tag $GITHUB_REF_NAME ne correspond pas à la version $VERSION de src-tauri/tauri.conf.json"
+            exit 1
+          fi
+          RELEASES=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate)
+          if [ -n "$(echo "$RELEASES" | jq -r --arg t "$TAG" '.[] | select(.tag_name == $t and .draft == false) | .id')" ]; then
+            echo "::error::La version $VERSION est déjà publiée. Montez la version dans src-tauri/tauri.conf.json."
+            exit 1
+          fi
+          ID=$(echo "$RELEASES" | jq -r --arg t "$TAG" '[.[] | select(.tag_name == $t and .draft == true)][0].id // empty')
+          if [ -z "$ID" ]; then
+            ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" -f name="Bati $VERSION" -F draft=true \
+              -f body="Windows : Bati_${VERSION}_x64-setup.exe · Mac (Apple et Intel) : Bati_${VERSION}_universal.dmg" \
+              --jq .id)
+          fi
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+
+  compiler:
+    needs: brouillon
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rust_targets: ""
+            args: "--bundles nsis"
+          - os: macos-latest
+            rust_targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+            args: "--target universal-apple-darwin --bundles dmg"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - run: npm ci
+
+      # Toutes les tailles (Windows .ico, Mac .icns, PNG) depuis l'icône 512 px de Bati.
+      - run: npx tauri icon app-icon.png
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          releaseId: ${{ needs.brouillon.outputs.id }}
+          args: ${{ matrix.args }}
