@@ -45,7 +45,9 @@ fn reste_dans_la_fenetre(url: &Url) -> bool {
         return true;
     }
     if chez_codenco(url) {
-        return !url.path().to_ascii_lowercase().ends_with(".pdf");
+        // Seul l'espace Bati reste dans la fenêtre : le site, /p/…, /l/… s'ouvrent dans le navigateur.
+        let chemin = url.path().to_ascii_lowercase();
+        return (chemin == "/bati" || chemin.starts_with("/bati/") || chemin.starts_with("/api/bati/")) && !chemin.ends_with(".pdf");
     }
     match url.scheme() {
         "about" | "blob" | "data" => true,
@@ -118,6 +120,10 @@ fn main() {
                     }
                     ouvrir_dehors(&pour_nav, url);
                     false
+                })
+                // Le titre de la page (« Bati · Mes demandes », posé par le site) devient celui de la fenêtre.
+                .on_document_title_changed(|fenetre, titre| {
+                    let _ = fenetre.set_title(&titre);
                 })
                 // target=_blank et window.open : toujours dans le navigateur, jamais de seconde fenêtre.
                 .on_new_window(move |url, _| {

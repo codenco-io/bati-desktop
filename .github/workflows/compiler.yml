@@ -1,6 +1,7 @@
 name: Compiler Bati
 
 # À la main (onglet Actions > Compiler Bati > Run workflow) ou en poussant un tag v* (v0.1.0, v0.2.0…).
+# Publier une Release crée son étiquette de version, ce qui relance ce workflow : il s'arrête alors sans compiler ni échouer.
 on:
   workflow_dispatch:
   push:
@@ -33,6 +34,11 @@ jobs:
           fi
           RELEASES=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate)
           if [ -n "$(echo "$RELEASES" | jq -r --arg t "$TAG" '.[] | select(.tag_name == $t and .draft == false) | .id')" ]; then
+            # Étiquette poussée par la publication de la Release : rien à compiler, on s'arrête sans erreur.
+            if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+              echo "La version $VERSION est déjà publiée : rien à compiler."
+              exit 0
+            fi
             echo "::error::La version $VERSION est déjà publiée. Montez la version dans src-tauri/tauri.conf.json."
             exit 1
           fi
@@ -47,6 +53,7 @@ jobs:
 
   compiler:
     needs: brouillon
+    if: needs.brouillon.outputs.id != ''
     strategy:
       fail-fast: false
       matrix:

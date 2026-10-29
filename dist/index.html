@@ -35,6 +35,8 @@
       transition: opacity .3s ease;
     }
     main.visible { opacity: 1; }
+    #demarrage { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); }
+    #demarrage img { width: 72px; height: 72px; border-radius: 17px; }
     img { width: 96px; height: 96px; border-radius: 22px; }
     h1 { margin: 20px 0 8px; font-size: 22px; font-weight: 700; }
     p { margin: 0 0 28px; color: var(--ink-2); line-height: 1.5; }
@@ -55,6 +57,7 @@
   </style>
 </head>
 <body>
+  <div id="demarrage" aria-hidden="true"><img src="bati.png" alt=""></div>
   <main id="carte" aria-live="polite">
     <img src="bati.png" alt="">
     <h1>Pas de connexion</h1>
