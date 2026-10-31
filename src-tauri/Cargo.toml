@@ -1,6 +1,6 @@
 [package]
 name = "bati"
-version = "0.1.2"
+version = "0.1.3"
 description = "Bati pour ordinateur"
 authors = ["CodeN'Co"]
 edition = "2021"

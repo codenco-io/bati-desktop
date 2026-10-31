@@ -35,6 +35,11 @@ fn chez_codenco(url: &Url) -> bool {
     url.scheme() == "https" && matches!(url.host_str(), Some("codenco.io" | "www.codenco.io"))
 }
 
+/// Le cadre anti-robot de Cloudflare (Turnstile) de la connexion et des formulaires. Ce domaine seulement, en https.
+fn chez_cloudflare(url: &Url) -> bool {
+    url.scheme() == "https" && url.host_str() == Some("challenges.cloudflare.com")
+}
+
 fn page_locale(url: &Url) -> bool {
     url.scheme() == "tauri" || (url.scheme() == "http" && url.host_str() == Some("tauri.localhost"))
 }
@@ -48,6 +53,11 @@ fn reste_dans_la_fenetre(url: &Url) -> bool {
         // Seul l'espace Bati reste dans la fenêtre : le site, /p/…, /l/… s'ouvrent dans le navigateur.
         let chemin = url.path().to_ascii_lowercase();
         return (chemin == "/bati" || chemin.starts_with("/bati/") || chemin.starts_with("/api/bati/")) && !chemin.ends_with(".pdf");
+    }
+    // Sur Mac, ce filtre voit aussi les cadres intégrés (sur Windows, seulement la page) : sans cette ligne, le cadre
+    // anti-robot de la connexion part dans Safari et l'écran reste blanc.
+    if chez_cloudflare(url) {
+        return true;
     }
     match url.scheme() {
         "about" | "blob" | "data" => true,
@@ -159,4 +169,61 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("Bati n'a pas pu démarrer");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dedans(adresse: &str) -> bool {
+        reste_dans_la_fenetre(&Url::parse(adresse).expect("adresse valide"))
+    }
+
+    #[test]
+    fn le_cadre_anti_robot_de_cloudflare_reste_dans_la_fenetre() {
+        assert!(dedans("https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2/av0/rcv/abc/0x4AAAA/light/fbE/new/normal/auto/"));
+        assert!(dedans("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"));
+    }
+
+    #[test]
+    fn seul_ce_domaine_est_ajoute() {
+        assert!(!dedans("http://challenges.cloudflare.com/cdn-cgi/challenge-platform/x"));
+        assert!(!dedans("https://cloudflare.com/"));
+        assert!(!dedans("https://www.cloudflare.com/"));
+        assert!(!dedans("https://dash.cloudflare.com/"));
+        assert!(!dedans("https://evilchallenges.cloudflare.com/"));
+        assert!(!dedans("https://challenges.cloudflare.com.evil.example/"));
+        assert!(!dedans("https://challenges.cloudflare.com@evil.example/"));
+        assert!(!dedans("https://evil.example/challenges.cloudflare.com/"));
+    }
+
+    #[test]
+    fn le_reste_ne_change_pas() {
+        // L'espace Bati et la page locale restent dans la fenêtre.
+        assert!(dedans("https://codenco.io/bati/espace/"));
+        assert!(dedans("https://www.codenco.io/bati"));
+        assert!(dedans("https://codenco.io/api/bati/code/send"));
+        assert!(dedans("tauri://localhost/index.html"));
+        assert!(dedans("http://tauri.localhost/index.html"));
+        assert!(dedans("about:blank"));
+        assert!(dedans("data:text/html,bonjour"));
+        assert!(dedans("blob:https://codenco.io/0b9c5f1e-0000-4000-8000-000000000000"));
+        // Les lecteurs vidéo (/embed) aussi.
+        assert!(dedans("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"));
+        assert!(dedans("https://www.instagram.com/p/abc/embed/"));
+        // Le site, les pages publiques et les PDF s'ouvrent dans le navigateur.
+        assert!(!dedans("https://codenco.io/"));
+        assert!(!dedans("https://codenco.io/mentions-legales/"));
+        assert!(!dedans("https://codenco.io/p/camille/"));
+        assert!(!dedans("https://codenco.io/l/camille/"));
+        assert!(!dedans("https://codenco.io/bati/export.PDF"));
+        assert!(!dedans("http://codenco.io/bati/espace/"));
+        // Les liens externes aussi.
+        assert!(!dedans("https://wa.me/33600000000"));
+        assert!(!dedans("https://checkout.stripe.com/c/pay/cs_test_abc"));
+        assert!(!dedans("https://cal.com/pro/rendez-vous"));
+        assert!(!dedans("mailto:contact@exemple.fr"));
+        assert!(!dedans("tel:+33600000000"));
+        assert!(!dedans("file:///etc/passwd"));
+    }
 }
