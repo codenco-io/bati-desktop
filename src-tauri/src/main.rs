@@ -1,5 +1,6 @@
 // Bati pour ordinateur : une fenêtre qui ouvre l'espace en ligne. Le site distant n'a accès à aucune commande :
-// tout ce que l'appli fait (ouvrir un lien dehors, enregistrer un fichier, mémoriser la fenêtre) se décide ici, en Rust.
+// tout ce que l'appli fait (ouvrir un lien dehors, enregistrer un fichier, mémoriser la fenêtre, se mettre à jour)
+// se décide ici, en Rust.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -7,9 +8,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use tauri::webview::{DownloadEvent, NewWindowResponse};
+use tauri::window::Color;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 use tauri_plugin_window_state::StateFlags;
+
+/// Le fond de l'écran de démarrage (--bg de dist/index.html) : la fenêtre ne flashe jamais en blanc.
+const FOND: Color = Color(10, 13, 21, 255);
 
 /// La page locale « Pas de connexion », servie depuis dist/ (adresse différente selon le système).
 #[cfg(windows)]
@@ -28,6 +35,50 @@ const SCRIPT_HORS_LIGNE: &str = r#"(function () {
     e.preventDefault();
     e.stopPropagation();
     location.href = "__PAGE_LOCALE__?retour=" + encodeURIComponent(a.href);
+  }, true);
+})();"#;
+
+/// Mac seulement : WebKit ignore un lien de téléchargement vers un blob: (<a download href="blob:…">, la story PNG,
+/// le QR, les exports), alors qu'il télécharge bien un data:. Ce script garde chaque blob créé par la page et,
+/// au clic sur un tel lien, le convertit en data: avec le même nom : le fichier passe alors par on_download.
+#[cfg(target_os = "macos")]
+const SCRIPT_BLOB_MAC: &str = r#"(function () {
+  if (location.hostname !== "codenco.io" && location.hostname !== "www.codenco.io") return;
+  var blobs = new Map();
+  var creer = URL.createObjectURL, revoquer = URL.revokeObjectURL, cliquer = HTMLAnchorElement.prototype.click;
+  URL.createObjectURL = function (objet) {
+    var url = creer.call(URL, objet);
+    if (objet instanceof Blob) blobs.set(url, objet);
+    return url;
+  };
+  URL.revokeObjectURL = function (url) {
+    blobs.delete(url);
+    return revoquer.call(URL, url);
+  };
+  function telecharger(a) {
+    var blob = a.hasAttribute("download") ? blobs.get(a.href) : null;
+    if (!blob) return false;
+    var nom = a.getAttribute("download") || "telechargement";
+    var lecteur = new FileReader();
+    lecteur.onload = function () {
+      var lien = document.createElement("a");
+      lien.href = lecteur.result;
+      lien.download = nom;
+      document.documentElement.append(lien);
+      cliquer.call(lien);
+      lien.remove();
+    };
+    lecteur.readAsDataURL(blob);
+    return true;
+  }
+  // a.click() depuis le code du site, que le lien soit dans la page ou non.
+  HTMLAnchorElement.prototype.click = function () {
+    if (!telecharger(this)) cliquer.call(this);
+  };
+  // Un vrai clic sur un tel lien.
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("a[download][href^='blob:']") : null;
+    if (a && telecharger(a)) e.preventDefault();
   }, true);
 })();"#;
 
@@ -65,6 +116,86 @@ fn reste_dans_la_fenetre(url: &Url) -> bool {
         "https" => url.path().contains("/embed"),
         _ => false,
     }
+}
+
+/// Après un chargement de l'espace qui échoue faute de connexion : la page locale « Pas de connexion »,
+/// qui pourra y revenir (?retour=). Rien pour une autre adresse.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn page_hors_ligne(adresse: &str) -> Option<Url> {
+    let url = Url::parse(adresse).ok().filter(chez_codenco)?;
+    Url::parse_with_params(PAGE_LOCALE, [("echec", "1"), ("retour", url.as_str())]).ok()
+}
+
+/// Windows : quand l'espace ne se charge pas (pas d'internet, serveur injoignable), WebView2 afficherait sa page
+/// d'erreur brute. On renvoie à la place sur « Pas de connexion ». Sur Mac, la page locale reste affichée et
+/// montre elle-même ce message au bout de 10 secondes.
+#[cfg(windows)]
+fn hors_ligne_si_echec(fenetre: &tauri::WebviewWindow) -> tauri::Result<()> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::*;
+    use webview2_com::{take_pwstr, NavigationCompletedEventHandler};
+    use windows_core::{BOOL, HSTRING, PCWSTR, PWSTR};
+
+    fenetre.with_webview(|vue| unsafe {
+        let Ok(coeur) = vue.controller().CoreWebView2() else { return };
+        let gestionnaire = NavigationCompletedEventHandler::create(Box::new(|coeur, details| {
+            let (Some(coeur), Some(details)) = (coeur, details) else { return Ok(()) };
+            let mut reussi = BOOL::default();
+            details.IsSuccess(&mut reussi)?;
+            let mut erreur = COREWEBVIEW2_WEB_ERROR_STATUS::default();
+            details.WebErrorStatus(&mut erreur)?;
+            // Seulement les erreurs de connexion : une page 404 ou un chargement interrompu restent tels quels.
+            let connexion = matches!(
+                erreur,
+                COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE
+                    | COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT
+                    | COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED
+                    | COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET
+                    | COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED
+                    | COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT
+                    | COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED
+            );
+            if reussi.as_bool() || !connexion {
+                return Ok(());
+            }
+            let mut source = PWSTR::null();
+            coeur.Source(&mut source)?;
+            if let Some(page) = page_hors_ligne(&take_pwstr(source)) {
+                let page = HSTRING::from(page.as_str());
+                coeur.Navigate(PCWSTR(page.as_ptr()))?;
+            }
+            Ok(())
+        }));
+        let mut jeton = 0i64;
+        let _ = coeur.add_NavigationCompleted(&gestionnaire, &mut jeton);
+    })
+}
+
+/// Au lancement, en silence : s'il existe une version plus récente (la dernière Release publiée, jamais un brouillon),
+/// on propose de l'installer. Rien sans accord ; une erreur (pas de réseau, fichier absent) ne dit rien.
+fn proposer_mise_a_jour(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let Ok(verif) = app.updater() else { return };
+        let Ok(Some(maj)) = verif.check().await else { return };
+        let mut dialogue = app
+            .dialog()
+            .message("Une nouvelle version de Bati est disponible.")
+            .title("Bati")
+            .buttons(MessageDialogButtons::OkCancelCustom("Mettre à jour".into(), "Plus tard".into()));
+        if let Some(principale) = app.get_webview_window("main") {
+            dialogue = dialogue.parent(&principale);
+        }
+        dialogue.show(move |accord| {
+            if !accord {
+                return;
+            }
+            tauri::async_runtime::spawn(async move {
+                // Windows : l'installeur ferme Bati et le relance lui-même. Mac : on relance une fois l'appli remplacée.
+                if maj.download_and_install(|_, _| {}, || {}).await.is_ok() {
+                    app.restart();
+                }
+            });
+        });
+    });
 }
 
 /// Ouvre dans le navigateur ou l'appli par défaut, seulement pour des adresses sûres (jamais file: ni un protocole inconnu).
@@ -111,19 +242,28 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().with_state_flags(StateFlags::all() & !StateFlags::VISIBLE).build())
         .setup(|app| {
             let version = app.package_info().version.to_string();
             let (pour_nav, pour_fenetres, pour_fichiers) = (app.handle().clone(), app.handle().clone(), app.handle().clone());
             let dernier_fichier: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            // Créée cachée, le temps de remettre sa taille et sa place mémorisées, puis montrée aussitôt
+            // (sans attendre la page) : pas de saut à l'ouverture.
+            let fenetre = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Bati")
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(900.0, 600.0)
                 .center()
+                .visible(false)
+                .background_color(FOND)
                 .user_agent(&user_agent(&version))
-                .initialization_script(SCRIPT_HORS_LIGNE.replace("__PAGE_LOCALE__", PAGE_LOCALE))
+                .initialization_script(SCRIPT_HORS_LIGNE.replace("__PAGE_LOCALE__", PAGE_LOCALE));
+            #[cfg(target_os = "macos")]
+            let fenetre = fenetre.initialization_script(SCRIPT_BLOB_MAC);
+            let fenetre = fenetre
                 .on_navigation(move |url| {
                     if reste_dans_la_fenetre(url) {
                         return true;
@@ -165,6 +305,10 @@ fn main() {
                     _ => true,
                 })
                 .build()?;
+            fenetre.show()?;
+            #[cfg(windows)]
+            hors_ligne_si_echec(&fenetre)?;
+            proposer_mise_a_jour(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -195,6 +339,19 @@ mod tests {
         assert!(!dedans("https://challenges.cloudflare.com.evil.example/"));
         assert!(!dedans("https://challenges.cloudflare.com@evil.example/"));
         assert!(!dedans("https://evil.example/challenges.cloudflare.com/"));
+    }
+
+    #[test]
+    fn un_echec_de_chargement_de_l_espace_mene_a_pas_de_connexion() {
+        let page = page_hors_ligne("https://codenco.io/bati/espace/demandes/?filtre=a&b=1").expect("page locale");
+        assert!(page_locale(&page));
+        assert!(dedans(page.as_str()));
+        let attendus = [("echec", "1"), ("retour", "https://codenco.io/bati/espace/demandes/?filtre=a&b=1")];
+        assert!(page.query_pairs().map(|(cle, valeur)| (cle.into_owned(), valeur.into_owned())).eq(attendus.map(|(c, v)| (c.to_string(), v.to_string()))));
+        // Une autre adresse ne renvoie jamais sur la page locale.
+        assert!(page_hors_ligne("https://wa.me/33600000000").is_none());
+        assert!(page_hors_ligne("http://codenco.io/bati/espace/").is_none());
+        assert!(page_hors_ligne("pas une adresse").is_none());
     }
 
     #[test]

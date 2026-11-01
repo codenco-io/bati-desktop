@@ -2,13 +2,15 @@
 
 L'application de bureau de Bati (Windows et Mac). Une fenêtre qui ouvre l'espace en ligne,
 https://codenco.io/bati/espace/ : le contenu vient du site, il se met donc à jour tout seul.
-L'appli elle-même ne se met pas à jour automatiquement.
+L'appli elle-même vérifie au lancement s'il existe une version plus récente (la dernière Release publiée,
+jamais un brouillon) et propose « Mettre à jour » ou « Plus tard ». Rien ne s'installe sans accord.
 
 - Une seule fenêtre, rouverte à la même taille et au même endroit. Relancer l'appli la remet devant.
 - Les liens qui sortent de codenco.io (WhatsApp, e-mail, téléphone, Stripe, Instagram…), les liens
   « nouvel onglet » et les PDF en ligne s'ouvrent dans le navigateur.
 - Les fichiers fabriqués par la page (exports, QR, story) vont dans Téléchargements.
-- Sans internet : un écran « Pas de connexion » avec un bouton « Réessayer ».
+- Au lancement, l'écran de démarrage s'affiche tout de suite et l'appli part directement sur l'espace.
+  Sans internet : un écran « Pas de connexion » avec un bouton « Réessayer ».
 - Le site est reconnu grâce à « BatiDesktop/<version> » à la fin du user agent.
 - Le site n'a accès à aucune commande de l'appli ni aux fichiers de l'ordinateur.
 
@@ -37,14 +39,26 @@ C'est normal, et cela ne se produit qu'une fois.
 ## Publier une nouvelle version
 
 1. Changer la version dans `src-tauri/tauri.conf.json` (par exemple `0.2.0`), ainsi que dans
-   `src-tauri/Cargo.toml` et `package.json` pour rester alignés.
+   `src-tauri/Cargo.toml`, `package.json` et `package-lock.json` pour rester alignés.
 2. Committer, puis pousser un tag identique : `git tag v0.2.0 && git push origin v0.2.0`.
-3. GitHub Actions compile l'installeur Windows (`.exe`) et le Mac universel (`.dmg`, puces Apple et Intel)
-   et les dépose dans une Release **brouillon** (onglet Releases).
-4. Vérifier les deux fichiers, puis cliquer « Publish release ».
+3. GitHub Actions compile l'installeur Windows (`.exe`) et le Mac universel (`.dmg`, puces Apple et Intel),
+   avec les fichiers de mise à jour signés et `latest.json`, et dépose le tout dans une Release **brouillon**
+   (onglet Releases). Une dernière étape vérifie que `latest.json` contient Windows et les deux Mac.
+4. Vérifier les fichiers, puis cliquer « Publish release ». C'est seulement à ce moment que les applis
+   installées voient la nouvelle version.
 
 La compilation peut aussi se lancer à la main : onglet Actions > Compiler Bati > Run workflow.
-Aucun secret à configurer.
+
+### La clé de signature des mises à jour
+
+Chaque mise à jour est signée : l'appli refuse un fichier qui ne porte pas la signature de cette clé.
+
+- La clé publique est dans `src-tauri/tauri.conf.json`, `plugins.updater.pubkey`. Tant qu'elle vaut
+  `A_REMPLIR_CLE_PUBLIQUE_BATI`, la compilation s'arrête.
+- La clé privée et son mot de passe sont deux secrets du dépôt GitHub (Settings > Secrets and variables >
+  Actions) : `TAURI_SIGNING_PRIVATE_KEY` et `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Ils ne vont jamais dans le dépôt.
+- Perdre la clé privée ou son mot de passe empêche toute mise à jour automatique des applis déjà installées :
+  il faudrait les réinstaller à la main. La garder dans un gestionnaire de mots de passe.
 
 ## Refaire les images
 

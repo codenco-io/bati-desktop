@@ -28,6 +28,11 @@ jobs:
         run: |
           VERSION=$(jq -r .version src-tauri/tauri.conf.json)
           TAG="v$VERSION"
+          # Sans la vraie clé publique, l'appli proposerait des mises à jour qu'elle ne pourrait jamais installer.
+          if [ "$(jq -r .plugins.updater.pubkey src-tauri/tauri.conf.json)" = "A_REMPLIR_CLE_PUBLIQUE_BATI" ]; then
+            echo "::error::Collez la clé publique de mise à jour dans plugins.updater.pubkey de src-tauri/tauri.conf.json (voir README)."
+            exit 1
+          fi
           if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
             echo "::error::Le tag $GITHUB_REF_NAME ne correspond pas à la version $VERSION de src-tauri/tauri.conf.json"
             exit 1
@@ -83,9 +88,39 @@ jobs:
 
       - run: npm ci
 
+      # Dépose aussi les fichiers de mise à jour signés (.exe.sig, .app.tar.gz + .sig) et latest.json,
+      # complété par chaque compilation (Windows, puis Mac pour les puces Apple et Intel).
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.brouillon.outputs.id }}
           args: ${{ matrix.args }}
+          updaterJsonPreferNsis: true
+
+  # Les deux compilations complètent le même latest.json : si elles ont fini au même moment, l'une a pu effacer
+  # la part de l'autre. On le vérifie avant que la Release ne puisse être publiée.
+  verifier:
+    needs: [brouillon, compiler]
+    if: needs.brouillon.outputs.id != ''
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          ID: ${{ needs.brouillon.outputs.id }}
+        run: |
+          ASSET=$(gh api "repos/$GITHUB_REPOSITORY/releases/$ID/assets" --jq '.[] | select(.name == "latest.json") | .id')
+          if [ -z "$ASSET" ]; then
+            echo "::error::latest.json manque dans la Release brouillon."
+            exit 1
+          fi
+          gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET" > latest.json
+          cat latest.json
+          for p in windows-x86_64 darwin-aarch64 darwin-x86_64; do
+            if [ -z "$(jq -r --arg p "$p" '.platforms[$p].signature // empty' latest.json)" ]; then
+              echo "::error::latest.json n'a pas la plateforme $p : relancez le workflow (Run workflow), il complète la même Release brouillon."
+              exit 1
+            fi
+          done

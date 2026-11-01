@@ -35,8 +35,36 @@
       transition: opacity .3s ease;
     }
     main.visible { opacity: 1; }
-    #demarrage { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); }
-    #demarrage img { width: 72px; height: 72px; border-radius: 17px; }
+    #demarrage {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      background: var(--bg);
+    }
+    #demarrage[hidden] { display: none; }
+    #demarrage img { width: 72px; height: 72px; border-radius: 17px; animation: respire 2.4s ease-in-out infinite; }
+    /* Chargement : un trait bleu qui glisse dans une piste discrète. */
+    .chargement { position: relative; width: 120px; height: 3px; overflow: hidden; border-radius: 3px; background: var(--line); }
+    .chargement::after {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 40%;
+      border-radius: inherit;
+      background: var(--blue);
+      animation: glisse 1.2s ease-in-out infinite;
+    }
+    @keyframes respire { 50% { transform: translateY(-4px) scale(1.03); } }
+    @keyframes glisse { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+    @media (prefers-reduced-motion: reduce) {
+      #demarrage img { animation: none; }
+      .chargement::after { width: 100%; animation: pulse 1.6s ease-in-out infinite; }
+      @keyframes pulse { 50% { opacity: .35; } }
+    }
     img { width: 96px; height: 96px; border-radius: 22px; }
     h1 { margin: 20px 0 8px; font-size: 22px; font-weight: 700; }
     p { margin: 0 0 28px; color: var(--ink-2); line-height: 1.5; }
@@ -57,7 +85,7 @@
   </style>
 </head>
 <body>
-  <div id="demarrage" aria-hidden="true"><img src="bati.png" alt=""></div>
+  <div id="demarrage" role="status" aria-label="Chargement de Bati"><img src="bati.png" alt=""><div class="chargement"></div></div>
   <main id="carte" aria-live="polite">
     <img src="bati.png" alt="">
     <h1>Pas de connexion</h1>
