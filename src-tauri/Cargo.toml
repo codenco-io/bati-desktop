@@ -15,6 +15,7 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
+serde_json = "1"
 
 # Déjà utilisés par Tauri sur Windows (mêmes versions) : pour savoir quand le chargement d'une page échoue.
 [target.'cfg(windows)'.dependencies]
